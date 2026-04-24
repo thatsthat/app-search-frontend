@@ -9,11 +9,15 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger,
+} from '@/components/ui/dialog'
 
 export interface AppRow {
   id: number
   store: 'google' | 'apple' | 'both'
   title: string
+  description: string | null
   developer: string | null
   score: number | null
   price: number | null
@@ -59,8 +63,31 @@ export function getColumns(
       cell: ({ row }) => (
         <div className="flex items-center gap-3 min-w-[200px]">
           {row.original.icon_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={row.original.icon_url} alt="" className="w-10 h-10 rounded-lg shrink-0" />
+            <Dialog>
+              <DialogTrigger asChild>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={row.original.icon_url}
+                  alt=""
+                  className="w-10 h-10 rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                />
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={row.original.icon_url} alt="" className="w-8 h-8 rounded-lg" />
+                    {row.original.title}
+                  </DialogTitle>
+                  {row.original.developer && (
+                    <DialogDescription>{row.original.developer}</DialogDescription>
+                  )}
+                </DialogHeader>
+                <p className="text-sm leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto">
+                  {row.original.description ?? 'No description available.'}
+                </p>
+              </DialogContent>
+            </Dialog>
           )}
           <div>
             {row.original.url ? (

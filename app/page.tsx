@@ -5,7 +5,7 @@ import type { AppRow } from '@/components/apps-table/columns'
 export default async function Page() {
   const { rows } = await pool.query<AppRow>(`
     SELECT
-      a.id, a.store, a.title, a.developer, a.score, a.price, a.free,
+      a.id, a.store, a.title, a.description, a.developer, a.score, a.price, a.free,
       a.genre, a.icon_url, a.url, a.relevant,
       array_agg(DISTINCT s.search_term ORDER BY s.search_term)
         FILTER (WHERE s.search_term IS NOT NULL) AS search_terms,
