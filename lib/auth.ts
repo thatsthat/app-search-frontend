@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
+import { pool } from '@/lib/db'
 
 const COOKIE = 'session'
 const secret = new TextEncoder().encode(
@@ -37,7 +38,16 @@ export async function getSession(): Promise<SessionPayload | null> {
   const jar = await cookies()
   const token = jar.get(COOKIE)?.value
   if (!token) return null
-  return verifySession(token)
+  const session = await verifySession(token)
+  if (!session) return null
+
+  const { rows } = await pool.query<{ admin: boolean }>(
+    'SELECT admin FROM users WHERE id = $1',
+    [session.userId]
+  )
+  if (!rows[0]) return null
+
+  return { ...session, isAdmin: rows[0].admin }
 }
 
 export function sessionCookieOptions(token: string) {
