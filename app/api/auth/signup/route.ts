@@ -12,6 +12,9 @@ const ensureTable = pool.query(`
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   ALTER TABLE users ADD COLUMN IF NOT EXISTS admin BOOLEAN NOT NULL DEFAULT FALSE;
+  CREATE TABLE IF NOT EXISTS whitelist (
+    email TEXT NOT NULL UNIQUE
+  );
 `)
 
 export async function POST(request: Request) {
@@ -25,10 +28,16 @@ export async function POST(request: Request) {
   const normalizedEmail = String(email).toLowerCase().trim()
   const hash = await bcrypt.hash(password, 12)
 
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM whitelist WHERE email = $1',
+    [normalizedEmail]
+  )
+  const active = (rowCount ?? 0) > 0
+
   try {
     await pool.query(
-      `INSERT INTO users (email, password_hash) VALUES ($1, $2)`,
-      [normalizedEmail, hash]
+      `INSERT INTO users (email, password_hash, active) VALUES ($1, $2, $3)`,
+      [normalizedEmail, hash, active]
     )
   } catch (err: any) {
     if (err.code === '23505') {
@@ -37,5 +46,8 @@ export async function POST(request: Request) {
     throw err
   }
 
-  return NextResponse.json({ message: 'Account created. Waiting for admin activation.' }, { status: 201 })
+  const message = active
+    ? 'Account created. You can now log in.'
+    : 'Account created. Waiting for admin activation.'
+  return NextResponse.json({ message }, { status: 201 })
 }
