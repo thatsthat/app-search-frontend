@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { pool } from '@/lib/db'
 import { AppsTable } from '@/components/apps-table/data-table'
 import type { AppRow } from '@/components/apps-table/columns'
