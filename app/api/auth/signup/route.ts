@@ -2,23 +2,28 @@ import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { pool } from '@/lib/db'
 
-const ensureTable = pool.query(`
-  CREATE TABLE IF NOT EXISTS users (
-    id            SERIAL PRIMARY KEY,
-    email         TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    active        BOOLEAN NOT NULL DEFAULT FALSE,
-    admin         BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS admin BOOLEAN NOT NULL DEFAULT FALSE;
-  CREATE TABLE IF NOT EXISTS whitelist (
-    email TEXT NOT NULL UNIQUE
-  );
-`)
+let tableReady = false
+async function ensureTable() {
+  if (tableReady) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            SERIAL PRIMARY KEY,
+      email         TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      active        BOOLEAN NOT NULL DEFAULT FALSE,
+      admin         BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS admin BOOLEAN NOT NULL DEFAULT FALSE;
+    CREATE TABLE IF NOT EXISTS whitelist (
+      email TEXT NOT NULL UNIQUE
+    );
+  `)
+  tableReady = true
+}
 
 export async function POST(request: Request) {
-  await ensureTable
+  await ensureTable()
   const { email, password } = await request.json()
 
   if (!email || !password || password.length < 8) {

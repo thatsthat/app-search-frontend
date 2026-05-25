@@ -3,9 +3,10 @@ import { NextResponse } from "next/server";
 
 const RERANK_MODEL = "cohere/rerank-4-pro";
 
-// Create/migrate table on first module load (idempotent)
-pool
-  .query(
+let tableReady = false;
+async function ensureTable() {
+  if (tableReady) return;
+  await pool.query(
     `CREATE TABLE IF NOT EXISTS reranker_results (
       id         SERIAL PRIMARY KEY,
       query      TEXT NOT NULL,
@@ -14,10 +15,12 @@ pool
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE reranker_results ADD COLUMN IF NOT EXISTS threshold REAL NOT NULL DEFAULT 0;`,
-  )
-  .catch(console.error);
+  );
+  tableReady = true;
+}
 
 export async function GET() {
+  await ensureTable();
   const { rows } = await pool.query<{
     id: number;
     query: string;
@@ -31,6 +34,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  await ensureTable();
   const { query, appIds } = (await request.json()) as {
     query: string;
     appIds: number[];
