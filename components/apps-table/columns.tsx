@@ -86,6 +86,7 @@ export function getColumns(
   onDelete: (id: number) => void,
   selectedTags: Array<{ id: number; description: string }>,
   rerankerScores?: Record<number, number>,
+  isAdmin = false,
 ): ColumnDef<AppRow>[] {
   const cols: ColumnDef<AppRow>[] = [
     {
@@ -95,7 +96,8 @@ export function getColumns(
       cell: ({ row }) => (
         <Switch
           checked={row.original.relevant}
-          onCheckedChange={(checked) => onRelevantChange(row.original.id, checked)}
+          onCheckedChange={(checked) => isAdmin && onRelevantChange(row.original.id, checked)}
+          disabled={!isAdmin}
         />
       ),
       filterFn: (row, _, value) => value === 'all' || String(row.original.relevant) === value,
@@ -321,7 +323,7 @@ export function getColumns(
     {
       id: 'delete',
       header: '',
-      cell: ({ row }) => (
+      cell: ({ row }) => isAdmin ? (
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
@@ -348,7 +350,7 @@ export function getColumns(
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      ),
+      ) : null,
     }
   )
 

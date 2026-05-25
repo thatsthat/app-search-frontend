@@ -1,6 +1,7 @@
 import { pool } from '@/lib/db'
 import { AppsTable } from '@/components/apps-table/data-table'
 import type { AppRow } from '@/components/apps-table/columns'
+import { getSession } from '@/lib/auth'
 
 export interface Tag {
   id: number
@@ -137,6 +138,7 @@ export default async function Page({
 
   const searchTerms = Array.from(new Set(searches.map((s) => s.search_term)))
   const countries = Array.from(new Set(searches.map((s) => s.country)))
+  const session = await getSession()
 
   return (
     <main className="container mx-auto py-8 px-4">
@@ -151,6 +153,7 @@ export default async function Page({
         paper2020Active={paper2020Active}
         totalApps={total}
         totalRelevant={totalRelevant}
+        isAdmin={session?.isAdmin ?? false}
       />
     </main>
   )

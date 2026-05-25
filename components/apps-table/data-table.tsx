@@ -106,6 +106,7 @@ interface AppsTableProps {
   paper2020Active: boolean
   totalApps: number
   totalRelevant: number
+  isAdmin: boolean
 }
 
 function TagFilterPanel({
@@ -455,7 +456,7 @@ function ReRankerPanel({
   )
 }
 
-export function AppsTable({ data: initialData, searchTerms, countries, tags, selectedTagIds, selectedKeywords, paper2020Active, totalApps, totalRelevant }: AppsTableProps) {
+export function AppsTable({ data: initialData, searchTerms, countries, tags, selectedTagIds, selectedKeywords, paper2020Active, totalApps, totalRelevant, isAdmin }: AppsTableProps) {
   const router = useRouter()
   const [data, setData] = useState(initialData)
   const [sorting, setSorting] = useState<SortingState>([])
@@ -627,7 +628,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
   )
 
   const columns = useMemo(
-    () => getColumns(handleRelevantChange, handleDelete, selectedTags, rerankerScores ?? undefined),
+    () => getColumns(handleRelevantChange, handleDelete, selectedTags, rerankerScores ?? undefined, isAdmin),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectedTagIds.join(','), rerankerScores]
   )
