@@ -1,0 +1,13 @@
+A8 - Title
+B8 - Description
+D8 - Genre
+
+
+=AND(OR(OR(regexmatch(A8, "(?i)(rhinitis)|(hay fever)|(hayfever)"),regexmatch(B8, "(?i)(rhinitis)|(hay fever)|(hayfever)")),AND(OR(regexmatch(D8, "(?i)(weather)"),regexmatch(A8, "(?i)(pollen)")), regexmatch(B8, "(?i)(rhinitis)|(hay fever)|(hay fever)|(asthma)|(allerg)"))),regexmatch(B8, "(?i)(symptom)"),not(OR(regexmatch(A8, "(?i)(home remed)|(natural remed)|(homeopath)|(alternative med)|(acupressure)"),regexmatch(B8, "(?i)(home remed)|(natural remed)|(homeopath)|(alternative med)|(acupressure)"))),NOT(AND(not(OR(regexmatch(A8, "(?i)(rhinitis)|(hay fever)|(hayfever)"),regexmatch(B8, "(?i)(rhinitis)|(hay fever)|(hayfever)"))),OR(regexmatch(A8, "(?i)(food)"),regexmatch(B8, "(?i)(food)")))))
+
+
+  Filter logic (matchesPaper2020, lines 31–43) — translates the spreadsheet formula exactly:
+  - cond1: rhinitis/hay fever/hayfever in title OR description — OR — (weather in genre OR pollen in title) AND (rhinitis/asthma/allerg in description)
+  - cond2: description contains "symptom"
+  - cond3: NOT home remedy/naturopath/alternative med/acupressure in title or description
+  - cond4: NOT (no rhinitis anywhere AND food in title/description) — i.e. food-only apps without rhinitis context are excluded

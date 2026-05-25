@@ -5,6 +5,7 @@ import { ArrowUpDown, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import { useState } from 'react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -17,7 +18,6 @@ export interface AppRow {
   id: number
   store: 'google' | 'apple' | 'both'
   title: string
-  description: string | null
   developer: string | null
   score: number | null
   price: number | null
@@ -26,8 +26,15 @@ export interface AppRow {
   icon_url: string | null
   url: string | null
   relevant: boolean
+  rank: number | null
   search_terms: string[] | null
   countries: string[] | null
+  similarities?: Record<string, number> | null
+  google_installs: number | null
+  google_score: number | null
+  google_ratings: number | null
+  apple_score: number | null
+  apple_ratings: number | null
 }
 
 const STORE_STYLE: Record<string, string> = {
@@ -36,11 +43,51 @@ const STORE_STYLE: Record<string, string> = {
   both: 'bg-purple-100 text-purple-800 border-purple-200',
 }
 
+function AppDialog({ app }: { app: AppRow }) {
+  const [description, setDescription] = useState<string | null | 'loading'>('loading')
+
+  const handleOpen = async (open: boolean) => {
+    if (!open || description !== 'loading') return
+    const res = await fetch(`/api/apps/${app.id}`)
+    const data = await res.json()
+    setDescription(data.description ?? null)
+  }
+
+  return (
+    <Dialog onOpenChange={handleOpen}>
+      <DialogTrigger asChild>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={app.icon_url!}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="w-10 h-10 rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+        />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={app.icon_url!} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-lg" />
+            {app.title}
+          </DialogTitle>
+          {app.developer && <DialogDescription>{app.developer}</DialogDescription>}
+        </DialogHeader>
+        <p className="text-sm leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto">
+          {description === 'loading' ? 'Loading…' : (description ?? 'No description available.')}
+        </p>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function getColumns(
   onRelevantChange: (id: number, relevant: boolean) => void,
-  onDelete: (id: number) => void
+  onDelete: (id: number) => void,
+  selectedTags: Array<{ id: number; description: string }>,
+  rerankerScores?: Record<number, number>,
 ): ColumnDef<AppRow>[] {
-  return [
+  const cols: ColumnDef<AppRow>[] = [
     {
       id: 'relevant',
       accessorFn: (row) => row.relevant,
@@ -53,6 +100,23 @@ export function getColumns(
       ),
       filterFn: (row, _, value) => value === 'all' || String(row.original.relevant) === value,
     },
+    ...(rerankerScores ? [{
+      id: 'reranker_score',
+      accessorFn: (row: AppRow) => rerankerScores[row.id] ?? -Infinity,
+      header: ({ column }: { column: import('@tanstack/react-table').Column<AppRow> }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-purple-700">
+          Reranker <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }: { row: import('@tanstack/react-table').Row<AppRow> }) => {
+        const score = rerankerScores[row.original.id]
+        return score != null ? (
+          <span className="font-mono tabular-nums text-purple-700">{score.toFixed(4)}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      },
+    } as ColumnDef<AppRow>] : []),
     {
       accessorKey: 'title',
       header: ({ column }) => (
@@ -63,31 +127,7 @@ export function getColumns(
       cell: ({ row }) => (
         <div className="flex items-center gap-3 min-w-[200px]">
           {row.original.icon_url && (
-            <Dialog>
-              <DialogTrigger asChild>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={row.original.icon_url}
-                  alt=""
-                  className="w-10 h-10 rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                />
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={row.original.icon_url} alt="" className="w-8 h-8 rounded-lg" />
-                    {row.original.title}
-                  </DialogTitle>
-                  {row.original.developer && (
-                    <DialogDescription>{row.original.developer}</DialogDescription>
-                  )}
-                </DialogHeader>
-                <p className="text-sm leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto">
-                  {row.original.description ?? 'No description available.'}
-                </p>
-              </DialogContent>
-            </Dialog>
+            <AppDialog app={row.original} />
           )}
           <div>
             {row.original.url ? (
@@ -118,19 +158,121 @@ export function getColumns(
       filterFn: (row, _, value) => value === 'all' || row.original.store === value,
     },
     {
-      accessorKey: 'score',
+      accessorKey: 'rank',
       header: ({ column }) => (
         <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
-          Score <ArrowUpDown className="ml-1 h-3 w-3" />
+          Rank <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
       cell: ({ row }) =>
-        row.original.score != null ? (
-          <span className="font-mono">★ {row.original.score.toFixed(1)}</span>
+        row.original.rank != null ? (
+          <span className="font-mono">#{row.original.rank}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
     },
+  ]
+
+  cols.push(
+    {
+      id: 'google_installs',
+      accessorKey: 'google_installs',
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-xs">
+          Installs (Google) <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) =>
+        row.original.google_installs != null ? (
+          <span className="font-mono tabular-nums">{row.original.google_installs.toLocaleString()}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: 'google_score',
+      accessorKey: 'google_score',
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-xs">
+          Score (Google) <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) =>
+        row.original.google_score != null ? (
+          <span className="font-mono">★ {row.original.google_score.toFixed(1)}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: 'google_ratings',
+      accessorKey: 'google_ratings',
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-xs">
+          Ratings (Google) <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) =>
+        row.original.google_ratings != null ? (
+          <span className="font-mono tabular-nums">{row.original.google_ratings.toLocaleString()}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: 'apple_score',
+      accessorKey: 'apple_score',
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-xs">
+          Score (Apple) <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) =>
+        row.original.apple_score != null ? (
+          <span className="font-mono">★ {row.original.apple_score.toFixed(1)}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: 'apple_ratings',
+      accessorKey: 'apple_ratings',
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-xs">
+          Ratings (Apple) <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) =>
+        row.original.apple_ratings != null ? (
+          <span className="font-mono tabular-nums">{row.original.apple_ratings.toLocaleString()}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+  )
+
+  for (const tag of selectedTags) {
+    const tagIdStr = String(tag.id)
+    cols.push({
+      id: `sim_${tag.id}`,
+      accessorFn: (row) => row.similarities?.[tagIdStr] ?? -1,
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-xs">
+          {tag.description} <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const sim = row.original.similarities?.[tagIdStr]
+        return sim != null ? (
+          <span className="font-mono tabular-nums">{(sim * 100).toFixed(1)}%</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      },
+    })
+  }
+
+  cols.push(
     {
       id: 'price',
       header: 'Price',
@@ -207,6 +349,8 @@ export function getColumns(
           </AlertDialogContent>
         </AlertDialog>
       ),
-    },
-  ]
+    }
+  )
+
+  return cols
 }
