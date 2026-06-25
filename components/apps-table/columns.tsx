@@ -5,14 +5,11 @@ import { ArrowUpDown, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { useState } from 'react'
+
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger,
-} from '@/components/ui/dialog'
 
 export interface AppRow {
   id: number
@@ -43,41 +40,16 @@ const STORE_STYLE: Record<string, string> = {
   both: 'bg-purple-100 text-purple-800 border-purple-200',
 }
 
-function AppDialog({ app }: { app: AppRow }) {
-  const [description, setDescription] = useState<string | null | 'loading'>('loading')
-
-  const handleOpen = async (open: boolean) => {
-    if (!open || description !== 'loading') return
-    const res = await fetch(`/api/apps/${app.id}`)
-    const data = await res.json()
-    setDescription(data.description ?? null)
-  }
-
+function AppIconChunking({ app }: { app: AppRow }) {
   return (
-    <Dialog onOpenChange={handleOpen}>
-      <DialogTrigger asChild>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={app.icon_url!}
-          alt=""
-          referrerPolicy="no-referrer"
-          className="w-10 h-10 rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-        />
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={app.icon_url!} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-lg" />
-            {app.title}
-          </DialogTitle>
-          {app.developer && <DialogDescription>{app.developer}</DialogDescription>}
-        </DialogHeader>
-        <p className="text-sm leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto">
-          {description === 'loading' ? 'Loading…' : (description ?? 'No description available.')}
-        </p>
-      </DialogContent>
-    </Dialog>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={app.icon_url!}
+      alt=""
+      referrerPolicy="no-referrer"
+      className="w-10 h-10 rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+      onClick={() => window.open(`/chunking.html?appId=${app.id}`, '_blank')}
+    />
   )
 }
 
@@ -129,7 +101,7 @@ export function getColumns(
       cell: ({ row }) => (
         <div className="flex items-center gap-3 min-w-[200px]">
           {row.original.icon_url && (
-            <AppDialog app={row.original} />
+            <AppIconChunking app={row.original} />
           )}
           <div>
             {row.original.url ? (
