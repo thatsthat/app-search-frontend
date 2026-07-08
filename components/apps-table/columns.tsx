@@ -32,6 +32,7 @@ export interface AppRow {
   google_ratings: number | null
   apple_score: number | null
   apple_ratings: number | null
+  cluster_id: number | null
 }
 
 const STORE_STYLE: Record<string, string> = {
@@ -53,11 +54,18 @@ function AppIconChunking({ app }: { app: AppRow }) {
   )
 }
 
+export interface ScoringColumn {
+  id: string
+  label: string
+  scores: Record<number, number>
+  color: string
+}
+
 export function getColumns(
   onRelevantChange: (id: number, relevant: boolean) => void,
   onDelete: (id: number) => void,
   selectedTags: Array<{ id: number; description: string }>,
-  rerankerScores?: Record<number, number>,
+  scoringColumn?: ScoringColumn,
   isAdmin = false,
 ): ColumnDef<AppRow>[] {
   const cols: ColumnDef<AppRow>[] = [
@@ -74,18 +82,18 @@ export function getColumns(
       ),
       filterFn: (row, _, value) => value === 'all' || String(row.original.relevant) === value,
     },
-    ...(rerankerScores ? [{
-      id: 'reranker_score',
-      accessorFn: (row: AppRow) => rerankerScores[row.id] ?? -Infinity,
+    ...(scoringColumn ? [{
+      id: scoringColumn.id,
+      accessorFn: (row: AppRow) => scoringColumn.scores[row.id] ?? -Infinity,
       header: ({ column }: { column: import('@tanstack/react-table').Column<AppRow> }) => (
-        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="text-purple-700">
-          Reranker <ArrowUpDown className="ml-1 h-3 w-3" />
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} style={{ color: scoringColumn.color }}>
+          {scoringColumn.label} <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
       cell: ({ row }: { row: import('@tanstack/react-table').Row<AppRow> }) => {
-        const score = rerankerScores[row.original.id]
+        const score = scoringColumn.scores[row.original.id]
         return score != null ? (
-          <span className="font-mono tabular-nums text-purple-700">{score.toFixed(4)}</span>
+          <span className="font-mono tabular-nums" style={{ color: scoringColumn.color }}>{score.toFixed(4)}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )
@@ -144,6 +152,22 @@ export function getColumns(
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
+    },
+    {
+      id: 'cluster',
+      accessorKey: 'cluster_id',
+      header: 'Cluster',
+      cell: ({ row }) =>
+        row.original.cluster_id != null ? (
+          <Badge variant="outline" className="font-mono">C{row.original.cluster_id}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      filterFn: (row, _, value) => {
+        if (value === 'all') return true
+        if (value === 'none') return row.original.cluster_id == null
+        return String(row.original.cluster_id) === value
+      },
     },
   ]
 

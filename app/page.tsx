@@ -78,7 +78,8 @@ export default async function Page({
         (a.raw_data->'google'->>'score')::float8       AS google_score,
         (a.raw_data->'google'->>'ratings')::float8     AS google_ratings,
         (a.raw_data->'apple'->>'score')::float8        AS apple_score,
-        (a.raw_data->'apple'->>'reviews')::float8      AS apple_ratings
+        (a.raw_data->'apple'->>'reviews')::float8      AS apple_ratings,
+        (SELECT c.id FROM clusters c WHERE a.id = ANY(c.apps) ORDER BY c.id DESC LIMIT 1) AS cluster_id
       FROM apps a
       LEFT JOIN search_results sr ON sr.app_id = a.id
       LEFT JOIN searches s       ON s.id = sr.search_id
@@ -115,7 +116,8 @@ export default async function Page({
         (a.raw_data->'google'->>'score')::float8       AS google_score,
         (a.raw_data->'google'->>'ratings')::float8     AS google_ratings,
         (a.raw_data->'apple'->>'score')::float8        AS apple_score,
-        (a.raw_data->'apple'->>'reviews')::float8      AS apple_ratings
+        (a.raw_data->'apple'->>'reviews')::float8      AS apple_ratings,
+        (SELECT c.id FROM clusters c WHERE a.id = ANY(c.apps) ORDER BY c.id DESC LIMIT 1) AS cluster_id
       FROM apps a
       LEFT JOIN search_results sr ON sr.app_id = a.id
       LEFT JOIN searches s       ON s.id = sr.search_id

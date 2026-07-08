@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   flexRender,
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Columns2, ChevronDown, X, Download } from 'lucide-react'
-import { AppRow, getColumns } from './columns'
+import { AppRow, getColumns, ScoringColumn } from './columns'
 import type { Tag } from '@/app/page'
 
 interface Metrics {
@@ -306,33 +306,52 @@ function KeywordFilterPanel({
   )
 }
 
-interface SavedRanking {
+interface SavedResult {
   id: number
   query: string
   scores: Record<string, number>
   threshold: number
   created_at: string
+  model?: string
 }
 
-function ReRankerPanel({
+function ScoringPanel({
+  label,
+  accentClass,
+  accentStyle,
+  description,
+  fetchListUrl,
+  postUrl,
+  patchUrl,
+  buildBody,
   appIds,
   onScoresLoaded,
   onClear,
   active,
   threshold,
   onThresholdChange,
+  extraControls,
 }: {
+  label: string
+  accentClass: string
+  accentStyle?: React.CSSProperties
+  description: string
+  fetchListUrl: string
+  postUrl: string
+  patchUrl: (id: number) => string
+  buildBody: (query: string) => Record<string, unknown>
   appIds: number[]
   onScoresLoaded: (scores: Record<number, number>, id: number, threshold: number) => void
   onClear: () => void
   active: boolean
   threshold: number
   onThresholdChange: (t: number) => void
+  extraControls?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
-  const [savedRankings, setSavedRankings] = useState<SavedRanking[] | null>(null)
+  const [saved, setSaved] = useState<SavedResult[] | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -348,30 +367,28 @@ function ReRankerPanel({
     if (open) setTimeout(() => inputRef.current?.focus(), 0)
   }, [open])
 
-  // Re-fetch saved rankings each time the panel opens to get fresh thresholds
   useEffect(() => {
-    if (open) {
-      fetch('/api/rerank')
-        .then((r) => r.json())
-        .then(({ rankings }) => setSavedRankings(rankings))
-        .catch(console.error)
-    }
-  }, [open])
+    if (!open) return
+    fetch(fetchListUrl)
+      .then((r) => r.json())
+      .then((data) => setSaved(data.rankings ?? data.results ?? []))
+      .catch(console.error)
+  }, [open, fetchListUrl])
 
   const run = async () => {
     const q = query.trim()
     if (!q || loading) return
     setLoading(true)
     try {
-      const res = await fetch('/api/rerank', {
+      const res = await fetch(postUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, appIds }),
+        body: JSON.stringify({ ...buildBody(q), appIds }),
       })
       if (!res.ok) { console.error(await res.text()); return }
       const { scores, id, created_at } = await res.json() as { scores: Record<number, number>; id: number; created_at: string }
       onScoresLoaded(scores, id, 0)
-      setSavedRankings((prev) => [{ id, query: q, scores, threshold: 0, created_at }, ...(prev ?? [])])
+      setSaved((prev) => [{ id, query: q, scores, threshold: 0, created_at }, ...(prev ?? [])])
     } finally {
       setLoading(false)
     }
@@ -382,17 +399,16 @@ function ReRankerPanel({
       <Button
         variant={active ? 'default' : 'outline'}
         onClick={() => setOpen((v) => !v)}
-        className={`gap-1 ${active ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+        className={`gap-1 ${active ? accentClass : ''}`}
       >
-        ReRanker
+        {label}
         <ChevronDown className="h-3 w-3" />
       </Button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-popover border rounded-md shadow-md p-3 min-w-[340px] space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Scores the currently shown apps using a neural reranker.
-          </p>
+        <div className="absolute left-0 top-full mt-1 z-50 bg-popover border rounded-md shadow-md p-3 min-w-[360px] space-y-3">
+          <p className="text-xs text-muted-foreground">{description}</p>
+          {extraControls}
           <div className="flex flex-col gap-2">
             <textarea
               ref={inputRef}
@@ -407,7 +423,8 @@ function ReRankerPanel({
               size="sm"
               onClick={run}
               disabled={!query.trim() || loading}
-              className="bg-purple-600 hover:bg-purple-700 text-white self-end"
+              className={`text-white self-end ${accentClass}`}
+              style={accentStyle}
             >
               {loading ? 'Running…' : 'Run'}
             </Button>
@@ -415,27 +432,28 @@ function ReRankerPanel({
           {active && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-20">Threshold</span>
+                <span className="text-xs text-muted-foreground w-20">Top apps</span>
                 <input
                   type="range"
                   min={0}
-                  max={100}
-                  value={Math.round(threshold * 100)}
-                  onChange={(e) => onThresholdChange(parseInt(e.target.value) / 100)}
-                  className="flex-1 h-1.5 accent-purple-600"
+                  max={appIds.length}
+                  value={threshold}
+                  onChange={(e) => onThresholdChange(parseInt(e.target.value))}
+                  className="flex-1 h-1.5"
+                  style={{ accentColor: accentStyle?.backgroundColor ?? '' }}
                 />
-                <span className="text-xs font-mono w-10 text-right">{Math.round(threshold * 100)}%</span>
+                <span className="text-xs font-mono w-10 text-right">{threshold}</span>
               </div>
               <Button size="sm" variant="ghost" onClick={onClear} className="w-full text-muted-foreground">
                 Clear scores
               </Button>
             </div>
           )}
-          {savedRankings !== null && savedRankings.length > 0 && (
+          {saved !== null && saved.length > 0 && (
             <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Saved rankings</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Saved results</p>
               <div className="max-h-52 overflow-y-auto space-y-0.5">
-                {savedRankings.map((r) => (
+                {saved.map((r) => (
                   <button
                     key={r.id}
                     onClick={() => onScoresLoaded(r.scores as unknown as Record<number, number>, r.id, r.threshold)}
@@ -443,6 +461,7 @@ function ReRankerPanel({
                   >
                     <span className="font-medium line-clamp-1">{r.query}</span>
                     <span className="text-xs text-muted-foreground">
+                      {r.model && <span className="font-mono mr-1">{r.model.split('/').pop()}</span>}
                       {new Date(r.created_at).toLocaleString()}
                     </span>
                   </button>
@@ -453,6 +472,83 @@ function ReRankerPanel({
         </div>
       )}
     </div>
+  )
+}
+
+function ReRankerPanel(props: {
+  appIds: number[]
+  onScoresLoaded: (scores: Record<number, number>, id: number, threshold: number) => void
+  onClear: () => void
+  active: boolean
+  threshold: number
+  onThresholdChange: (t: number) => void
+}) {
+  return (
+    <ScoringPanel
+      label="ReRanker"
+      accentClass="bg-purple-600 hover:bg-purple-700"
+      accentStyle={{ backgroundColor: '#9333ea' }}
+      description="Scores the currently shown apps using a neural reranker (Cohere Rerank 4)."
+      fetchListUrl="/api/rerank"
+      postUrl="/api/rerank"
+      patchUrl={(id) => `/api/rerank/${id}`}
+      buildBody={(query) => ({ query })}
+      {...props}
+    />
+  )
+}
+
+function EmbedQueryPanel(props: {
+  appIds: number[]
+  onScoresLoaded: (scores: Record<number, number>, id: number, threshold: number) => void
+  onClear: () => void
+  active: boolean
+  threshold: number
+  onThresholdChange: (t: number) => void
+}) {
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [selectedModel, setSelectedModel] = useState('qwen/qwen3-embedding-8b')
+
+  useEffect(() => {
+    fetch('/api/embed-query')
+      .then((r) => r.json())
+      .then(({ models }) => {
+        if (models?.length) {
+          setAvailableModels(models)
+          setSelectedModel((prev) => models.includes(prev) ? prev : models[0])
+        }
+      })
+      .catch(console.error)
+  }, [])
+
+  const modelPicker = (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted-foreground w-12 shrink-0">Model</span>
+      <select
+        value={selectedModel}
+        onChange={(e) => setSelectedModel(e.target.value)}
+        className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+      >
+        {availableModels.map((m) => (
+          <option key={m} value={m}>{m}</option>
+        ))}
+      </select>
+    </div>
+  )
+
+  return (
+    <ScoringPanel
+      label="Queries"
+      accentClass="bg-sky-600 hover:bg-sky-700"
+      accentStyle={{ backgroundColor: '#0284c7' }}
+      description="Ranks all apps by cosine similarity to your query using the embedding model."
+      fetchListUrl="/api/embed-query"
+      postUrl="/api/embed-query"
+      patchUrl={(id) => `/api/embed-query/${id}`}
+      buildBody={(query) => ({ query, model: selectedModel })}
+      extraControls={modelPicker}
+      {...props}
+    />
   )
 }
 
@@ -543,7 +639,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
 
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
 
-  const handleThresholdChange = useCallback((id: number, threshold: number) => {
+  const handleTagThresholdChange = useCallback((id: number, threshold: number) => {
     setTagConfigs((prev) => ({ ...prev, [id]: { ...prev[id], threshold } }))
     clearTimeout(debounceTimers.current[id])
     debounceTimers.current[id] = setTimeout(() => {
@@ -559,33 +655,55 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
     setTagConfigs((prev) => ({ ...prev, [id]: { ...prev[id], negate } }))
   }
 
-  const [rerankerScores, setRerankerScores] = useState<Record<number, number> | null>(null)
-  const [rerankerThreshold, setRerankerThreshold] = useState(0)
-  const [activeRankingId, setActiveRankingId] = useState<number | null>(null)
+  type ActiveScoring = { type: 'reranker' | 'embed'; scores: Record<number, number>; id: number; threshold: number } | null
+  const [activeScoring, setActiveScoring] = useState<ActiveScoring>(null)
   const [showFalseNegatives, setShowFalseNegatives] = useState(false)
 
-  const handleScoresLoaded = useCallback((scores: Record<number, number>, id: number, threshold: number) => {
-    setRerankerScores(scores)
-    setRerankerThreshold(threshold)
-    setActiveRankingId(id)
+  const handleRerankerScoresLoaded = useCallback((scores: Record<number, number>, id: number, _threshold: number) => {
+    setActiveScoring({ type: 'reranker', scores, id, threshold: 0 })
     setShowFalseNegatives(false)
     setSorting([{ id: 'reranker_score', desc: true }])
   }, [])
 
-  const rerankerDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleEmbedScoresLoaded = useCallback((scores: Record<number, number>, id: number, _threshold: number) => {
+    setActiveScoring({ type: 'embed', scores, id, threshold: 0 })
+    setShowFalseNegatives(false)
+    setSorting([{ id: 'embed_score', desc: true }])
+  }, [])
 
-  const handleRerankerThresholdChange = useCallback((threshold: number, rankingId: number | null) => {
-    setRerankerThreshold(threshold)
-    if (rankingId === null) return
-    if (rerankerDebounceTimer.current) clearTimeout(rerankerDebounceTimer.current)
-    rerankerDebounceTimer.current = setTimeout(() => {
-      fetch(`/api/rerank/${rankingId}`, {
+  const scoringDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeScoringRef = useRef<typeof activeScoring>(null)
+  activeScoringRef.current = activeScoring
+
+  const handleThresholdChange = useCallback((threshold: number) => {
+    setActiveScoring((prev) => prev ? { ...prev, threshold } : prev)
+    if (scoringDebounceTimer.current) clearTimeout(scoringDebounceTimer.current)
+    scoringDebounceTimer.current = setTimeout(() => {
+      const current = activeScoringRef.current
+      if (!current) return
+      const patchUrl = current.type === 'reranker' ? `/api/rerank/${current.id}` : `/api/embed-query/${current.id}`
+      fetch(patchUrl, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ threshold }),
       })
     }, 500)
   }, [])
+
+  const clearScoring = useCallback(() => {
+    setActiveScoring(null)
+    setShowFalseNegatives(false)
+    setSorting([])
+  }, [])
+
+  const lastPatchedScoringIdRef = useRef<number | null>(null)
+
+  const scoringColumn: ScoringColumn | undefined = activeScoring ? {
+    id: activeScoring.type === 'reranker' ? 'reranker_score' : 'embed_score',
+    label: activeScoring.type === 'reranker' ? 'ReRanker' : 'Similarity',
+    scores: activeScoring.scores,
+    color: activeScoring.type === 'reranker' ? '#9333ea' : '#0284c7',
+  } : undefined
 
   // Apply tag filtering client-side (keyword filtering is server-side via SQL)
   const filteredData = useMemo(() => {
@@ -606,21 +724,67 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
   }, [data, selectedTagIds, tagConfigs])
   const filteredAppIds = useMemo(() => filteredData.map((a) => a.id), [filteredData])
 
-  // Apps that pass the reranker threshold — used for metrics
-  const thresholdData = useMemo(() => {
-    if (!rerankerScores) return filteredData
-    return filteredData.filter((a) => (rerankerScores[a.id] ?? -Infinity) >= rerankerThreshold)
-  }, [filteredData, rerankerScores, rerankerThreshold])
+  // When a new result is loaded (id changes), compute optimal K from current filteredData
+  // and persist it. useLayoutEffect is synchronous before paint so there is no flash of
+  // threshold=0. Slider adjustments are handled separately by handleThresholdChange.
+  useLayoutEffect(() => {
+    if (!activeScoring || lastPatchedScoringIdRef.current === activeScoring.id) return
+    lastPatchedScoringIdRef.current = activeScoring.id
 
-  // What the table actually shows: either threshold-passing apps or false negatives
+    const scores = activeScoring.scores
+    const sorted = [...filteredData].sort((a, b) => (scores[b.id] ?? -Infinity) - (scores[a.id] ?? -Infinity))
+    let bestF1 = -1, bestK = 0, tp = 0
+    for (let k = 1; k <= sorted.length; k++) {
+      if (sorted[k - 1].relevant) tp++
+      const fn = totalRelevant - tp
+      const precision = tp / k
+      const recall = tp + fn > 0 ? tp / (tp + fn) : 0
+      const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0
+      if (f1 > bestF1) { bestF1 = f1; bestK = k }
+    }
+
+    setActiveScoring((prev) => prev ? { ...prev, threshold: bestK } : prev)
+
+    const url = activeScoring.type === 'reranker'
+      ? `/api/rerank/${activeScoring.id}`
+      : `/api/embed-query/${activeScoring.id}`
+    fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threshold: bestK }),
+    })
+  }, [activeScoring, filteredData, totalRelevant])
+
+  // Apps sorted by score — reused for threshold slicing and false-negative detection
+  const scoreSortedData = useMemo(() => {
+    if (!activeScoring) return null
+    return [...filteredData].sort(
+      (a, b) => (activeScoring.scores[b.id] ?? -Infinity) - (activeScoring.scores[a.id] ?? -Infinity)
+    )
+  }, [filteredData, activeScoring])
+
+  // Top-K apps (threshold = K count) — used for metrics
+  const thresholdData = useMemo(() => {
+    if (!activeScoring || !scoreSortedData) return filteredData
+    return scoreSortedData.slice(0, activeScoring.threshold)
+  }, [filteredData, activeScoring, scoreSortedData])
+
+  // What the table actually shows: either top-K apps or false negatives
   const tableData = useMemo(() => {
-    if (showFalseNegatives && rerankerScores) {
-      return filteredData.filter(
-        (a) => a.relevant && (rerankerScores[a.id] ?? -Infinity) < rerankerThreshold
-      )
+    if (showFalseNegatives && activeScoring && scoreSortedData) {
+      const inTop = new Set(scoreSortedData.slice(0, activeScoring.threshold).map((a) => a.id))
+      return filteredData.filter((a) => a.relevant && !inTop.has(a.id))
     }
     return thresholdData
-  }, [showFalseNegatives, rerankerScores, filteredData, rerankerThreshold, thresholdData])
+  }, [showFalseNegatives, activeScoring, filteredData, thresholdData, scoreSortedData])
+
+  const clusterIds = useMemo(() => {
+    const ids = new Set<number>()
+    for (const row of data) {
+      if (row.cluster_id != null) ids.add(row.cluster_id)
+    }
+    return Array.from(ids).sort((a, b) => a - b)
+  }, [data])
 
   const selectedTags = useMemo(
     () => tags.filter((t) => selectedTagIds.includes(t.id)),
@@ -628,9 +792,9 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
   )
 
   const columns = useMemo(
-    () => getColumns(handleRelevantChange, handleDelete, selectedTags, rerankerScores ?? undefined, isAdmin),
+    () => getColumns(handleRelevantChange, handleDelete, selectedTags, scoringColumn, isAdmin),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedTagIds.join(','), rerankerScores]
+    [selectedTagIds.join(','), activeScoring]
   )
 
   const table = useReactTable({
@@ -655,7 +819,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
   const total = table.getFilteredRowModel().rows.length
   const relevant = table.getFilteredRowModel().rows.filter((r) => r.original.relevant).length
 
-  const filterActive = selectedTagIds.length > 0 || selectedKeywords.length > 0 || paper2020Active || rerankerScores !== null
+  const filterActive = selectedTagIds.length > 0 || selectedKeywords.length > 0 || paper2020Active || activeScoring !== null
   const metrics = useMemo(
     () => (filterActive && !showFalseNegatives) ? computeMetrics(thresholdData, totalApps, totalRelevant) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -674,9 +838,10 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
 
     const headers = [
       'id', 'title', 'developer', 'store', 'url', 'relevant',
-      ...(rerankerScores ? ['reranker_score'] : []),
+      ...(scoringColumn ? [scoringColumn.label.toLowerCase().replace(' ', '_')] : []),
       'rank', 'price', 'free', 'genre', 'search_terms', 'countries',
       'google_installs', 'google_score', 'google_ratings', 'apple_score', 'apple_ratings',
+      'cluster_id',
       ...selectedTags.map((t) => `sim_${t.description}`),
     ]
 
@@ -689,7 +854,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
         app.store,
         app.url ?? '',
         app.relevant,
-        ...(rerankerScores ? [rerankerScores[app.id] ?? ''] : []),
+        ...(scoringColumn ? [scoringColumn.scores[app.id] ?? ''] : []),
         app.rank ?? '',
         app.free ? 0 : (app.price ?? ''),
         app.free ?? '',
@@ -701,6 +866,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
         app.google_ratings ?? '',
         app.apple_score ?? '',
         app.apple_ratings ?? '',
+        app.cluster_id ?? '',
         ...selectedTags.map((t) => app.similarities?.[String(t.id)] ?? ''),
       ].map(csvEscape).join(',')),
     ]
@@ -712,7 +878,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
     a.download = 'apps.csv'
     a.click()
     URL.revokeObjectURL(url)
-  }, [table, rerankerScores, selectedTags])
+  }, [table, scoringColumn, selectedTags])
 
   return (
     <div className="space-y-4">
@@ -724,7 +890,7 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
             selectedTagIds={selectedTagIds}
             tagConfigs={tagConfigs}
             onToggleTag={toggleTag}
-            onThresholdChange={handleThresholdChange}
+            onThresholdChange={handleTagThresholdChange}
             onNegateChange={handleNegateChange}
           />
         )}
@@ -736,13 +902,21 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
         />
         <ReRankerPanel
           appIds={filteredAppIds}
-          onScoresLoaded={handleScoresLoaded}
-          onClear={() => { setRerankerScores(null); setRerankerThreshold(0); setActiveRankingId(null); setShowFalseNegatives(false); setSorting([]) }}
-          active={rerankerScores !== null}
-          threshold={rerankerThreshold}
-          onThresholdChange={(t) => handleRerankerThresholdChange(t, activeRankingId)}
+          onScoresLoaded={handleRerankerScoresLoaded}
+          onClear={clearScoring}
+          active={activeScoring?.type === 'reranker'}
+          threshold={activeScoring?.type === 'reranker' ? activeScoring.threshold : 0}
+          onThresholdChange={handleThresholdChange}
         />
-        {rerankerScores !== null && (
+        <EmbedQueryPanel
+          appIds={filteredAppIds}
+          onScoresLoaded={handleEmbedScoresLoaded}
+          onClear={clearScoring}
+          active={activeScoring?.type === 'embed'}
+          threshold={activeScoring?.type === 'embed' ? activeScoring.threshold : 0}
+          onThresholdChange={handleThresholdChange}
+        />
+        {activeScoring !== null && (
           <Button
             variant={showFalseNegatives ? 'default' : 'outline'}
             onClick={() => setShowFalseNegatives((v) => !v)}
@@ -797,6 +971,20 @@ export function AppsTable({ data: initialData, searchTerms, countries, tags, sel
             <SelectItem value="false">Not relevant</SelectItem>
           </SelectContent>
         </Select>
+        {clusterIds.length > 0 && (
+          <Select onValueChange={(v) => setFilter('cluster', v)} defaultValue="all">
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="All clusters" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All clusters</SelectItem>
+              <SelectItem value="none">No cluster</SelectItem>
+              {clusterIds.map((id) => (
+                <SelectItem key={id} value={String(id)}>Cluster {id}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button
           variant={paper2020Active ? 'default' : 'outline'}
           onClick={() => router.push(buildUrl({ paper2020: paper2020Active ? null : 'true' }))}
